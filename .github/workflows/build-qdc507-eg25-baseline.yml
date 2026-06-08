@@ -6,13 +6,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    container: ubuntu:18.04
+    container: ubuntu:20.04
 
     steps:
       - name: Install build deps
         run: |
           apt update
-          apt install -y \
+          DEBIAN_FRONTEND=noninteractive apt install -y \
             git \
             build-essential \
             bc \
@@ -21,13 +21,20 @@ jobs:
             libssl-dev \
             libncurses5-dev \
             device-tree-compiler \
-            python \
-            python-minimal \
+            python2 \
             ca-certificates \
             u-boot-tools \
             xz-utils \
             wget \
             gcc-arm-linux-gnueabi
+
+      - name: Prepare python2 command
+        run: |
+          if ! command -v python >/dev/null 2>&1; then
+            ln -sf /usr/bin/python2 /usr/local/bin/python
+          fi
+          python --version
+          python2 --version
 
       - name: Checkout source
         uses: actions/checkout@v4
@@ -45,7 +52,7 @@ jobs:
           git describe --tags --always --dirty | tee -a out/source_version.txt || true
           echo "===== Toolchain =====" | tee out/toolchain_version.txt
           python --version 2>&1 | tee -a out/toolchain_version.txt
-          python2 --version 2>&1 | tee -a out/toolchain_version.txt || true
+          python2 --version 2>&1 | tee -a out/toolchain_version.txt
           arm-linux-gnueabi-gcc --version | head -5 | tee -a out/toolchain_version.txt
 
       - name: Prepare baseline config
