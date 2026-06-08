@@ -91,6 +91,7 @@ jobs:
           make ARCH=arm \
             CROSS_COMPILE=arm-linux-gnueabi- \
             HOSTCFLAGS="-fcommon" \
+            KCFLAGS="-Wno-attribute-alias" \
             -j$(nproc) zImage dtbs 2>&1 | tee out/kernel_build.log
 
       - name: Collect outputs
