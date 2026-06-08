@@ -6,16 +6,33 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    container: ubuntu:18.04
 
     steps:
       - name: Install build deps
         run: |
-          sudo apt update
-          sudo apt install -y git build-essential bc bison flex libssl-dev libncurses5-dev device-tree-compiler python3 ca-certificates u-boot-tools xz-utils wget gcc-arm-linux-gnueabi
+          apt update
+          apt install -y \
+            git \
+            build-essential \
+            bc \
+            bison \
+            flex \
+            libssl-dev \
+            libncurses5-dev \
+            device-tree-compiler \
+            python \
+            python-minimal \
+            ca-certificates \
+            u-boot-tools \
+            xz-utils \
+            wget \
+            gcc-arm-linux-gnueabi
 
       - name: Checkout source
         uses: actions/checkout@v4
         with:
+          ref: qdc507-baseline
           fetch-depth: 0
 
       - name: Check source version
@@ -26,6 +43,10 @@ jobs:
           echo "===== Git commit =====" | tee -a out/source_version.txt
           git log -1 --oneline | tee -a out/source_version.txt
           git describe --tags --always --dirty | tee -a out/source_version.txt || true
+          echo "===== Toolchain =====" | tee out/toolchain_version.txt
+          python --version 2>&1 | tee -a out/toolchain_version.txt
+          python2 --version 2>&1 | tee -a out/toolchain_version.txt || true
+          arm-linux-gnueabi-gcc --version | head -5 | tee -a out/toolchain_version.txt
 
       - name: Prepare baseline config
         run: |
@@ -37,7 +58,6 @@ jobs:
 
           make ARCH=arm \
             CROSS_COMPILE=arm-linux-gnueabi- \
-            CC=arm-linux-gnueabi-gcc \
             HOSTCFLAGS="-fcommon" \
             olddefconfig 2>&1 | tee out/olddefconfig.log
 
@@ -55,9 +75,7 @@ jobs:
 
           make ARCH=arm \
             CROSS_COMPILE=arm-linux-gnueabi- \
-            CC=arm-linux-gnueabi-gcc \
             HOSTCFLAGS="-fcommon" \
-            KCFLAGS="-Wno-error=implicit-function-declaration -Wno-error=unused-const-variable -Wno-error=misleading-indentation -Wno-error=incompatible-pointer-types -Wno-error=duplicate-decl-specifier" \
             -j$(nproc) zImage dtbs 2>&1 | tee out/kernel_build.log
 
       - name: Collect outputs
