@@ -1,0 +1,89 @@
+name: build-qdc507-eg25-baseline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Install build deps
+        run: |
+          sudo apt update
+          sudo apt install -y git build-essential bc bison flex libssl-dev libncurses5-dev device-tree-compiler python3 ca-certificates u-boot-tools xz-utils wget gcc-arm-linux-gnueabi
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check source version
+        run: |
+          mkdir -p out
+          echo "===== Makefile version =====" | tee out/source_version.txt
+          grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION) =' Makefile | tee -a out/source_version.txt
+          echo "===== Git commit =====" | tee -a out/source_version.txt
+          git log -1 --oneline | tee -a out/source_version.txt
+          git describe --tags --always --dirty | tee -a out/source_version.txt || true
+
+      - name: Prepare baseline config
+        run: |
+          set -o pipefail
+          mkdir -p out
+
+          cp .github/kernel_configs/qdc507_orig_boot.config .config
+          cp .github/kernel_configs/qdc507_orig_boot.config out/qdc507_orig_boot.config
+
+          make ARCH=arm \
+            CROSS_COMPILE=arm-linux-gnueabi- \
+            CC=arm-linux-gnueabi-gcc \
+            HOSTCFLAGS="-fcommon" \
+            olddefconfig 2>&1 | tee out/olddefconfig.log
+
+          cp .config out/config_qdc507_eg25_baseline_after_olddefconfig
+
+          echo "===== config diff against original =====" | tee out/config_diff.txt
+          diff -u .github/kernel_configs/qdc507_orig_boot.config .config | tee -a out/config_diff.txt || true
+
+          grep -E 'CONFIG_LOCALVERSION|CONFIG_LOCALVERSION_AUTO|CONFIG_MODULES|CONFIG_MODVERSIONS|CONFIG_ARCH_MDM9607|CONFIG_MSM_QDSP6V2_CODECS|CONFIG_SND_SOC_QDSP6V2|CONFIG_SND_SOC_MDM9607|CONFIG_MSM_QDSP6_APRV2|CONFIG_MSM_QDSP6_APRV3|CONFIG_IPA=|CONFIG_IPA3|CONFIG_DEBUG_INFO|CONFIG_DEBUG_GPIO|CONFIG_MTD_UBI_BLOCK' .config | tee out/baseline_config_check.txt || true
+
+      - name: Build baseline zImage and dtbs
+        run: |
+          set -o pipefail
+          mkdir -p out
+
+          make ARCH=arm \
+            CROSS_COMPILE=arm-linux-gnueabi- \
+            CC=arm-linux-gnueabi-gcc \
+            HOSTCFLAGS="-fcommon" \
+            KCFLAGS="-Wno-error=implicit-function-declaration -Wno-error=unused-const-variable -Wno-error=misleading-indentation -Wno-error=incompatible-pointer-types -Wno-error=duplicate-decl-specifier" \
+            -j$(nproc) zImage dtbs 2>&1 | tee out/kernel_build.log
+
+      - name: Collect outputs
+        if: always()
+        run: |
+          mkdir -p out/dtb
+
+          cp .config out/config_qdc507_eg25_baseline_final || true
+          cp arch/arm/boot/zImage out/zImage_qdc507_eg25_baseline || true
+
+          find arch/arm/boot/dts -name '*9607*.dtb' -exec cp {} out/dtb/ \; || true
+          find arch/arm/boot/dts -name '*mdm*.dtb' -exec cp {} out/dtb/ \; || true
+          find arch/arm/boot/dts -name '*eg25*.dtb' -exec cp {} out/dtb/ \; || true
+
+          find out -type f | sort > out/filelist.txt
+          ls -lh out > out/output_sizes.txt || true
+          ls -lh out/dtb >> out/output_sizes.txt || true
+
+          if [ -f out/zImage_qdc507_eg25_baseline ]; then
+            du -h out/zImage_qdc507_eg25_baseline >> out/output_sizes.txt
+            sha256sum out/zImage_qdc507_eg25_baseline > out/zImage_qdc507_eg25_baseline.sha256
+            strings out/zImage_qdc507_eg25_baseline | grep -i "Linux version" | head -5 > out/zImage_linux_version.txt || true
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qdc507-eg25-baseline-kernel
+          path: out/
